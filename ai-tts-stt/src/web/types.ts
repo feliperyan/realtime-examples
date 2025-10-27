@@ -1,4 +1,4 @@
-export type UserRole = 'player' | 'publisher';
+export type UserRole = 'player' | 'publisher' | 'live-agent';
 
 export type ConnectionState = 'initial' | 'publishing' | 'published' | 'unpublishing' | 'connecting' | 'connected' | 'disconnected';
 

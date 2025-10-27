@@ -30,6 +30,17 @@ export interface UIElements {
 	connectBtn: HTMLButtonElement;
 	disconnectBtn: HTMLButtonElement;
 
+	// Live Agent controls
+	liveAgentSection: HTMLDivElement;
+	liveAgentStartMicBtn: HTMLButtonElement;
+	liveAgentStopMicBtn: HTMLButtonElement;
+	liveAgentStartForwardingBtn: HTMLButtonElement;
+	liveAgentStopForwardingBtn: HTMLButtonElement;
+	liveAgentClearTranscriptionBtn: HTMLButtonElement;
+	liveAgentExportSubtitlesBtn: HTMLButtonElement;
+	liveAgentRestartNovaBtn: HTMLButtonElement;
+	liveAgentTranscriptionContent: HTMLDivElement;
+
 	// STT controls
 	sttSection: HTMLDivElement;
 	startSTTBtn: HTMLButtonElement;
@@ -85,6 +96,17 @@ export function cacheElements(): UIElements {
 		listenerTitle: getElement<HTMLHeadingElement>('listenerTitle'),
 		connectBtn: getElement<HTMLButtonElement>('connectBtn'),
 		disconnectBtn: getElement<HTMLButtonElement>('disconnectBtn'),
+
+		// Live Agent controls
+		liveAgentSection: getElement<HTMLDivElement>('liveAgentSection'),
+		liveAgentStartMicBtn: getElement<HTMLButtonElement>('liveAgentStartMicBtn'),
+		liveAgentStopMicBtn: getElement<HTMLButtonElement>('liveAgentStopMicBtn'),
+		liveAgentStartForwardingBtn: getElement<HTMLButtonElement>('liveAgentStartForwardingBtn'),
+		liveAgentStopForwardingBtn: getElement<HTMLButtonElement>('liveAgentStopForwardingBtn'),
+		liveAgentClearTranscriptionBtn: getElement<HTMLButtonElement>('liveAgentClearTranscriptionBtn'),
+		liveAgentExportSubtitlesBtn: getElement<HTMLButtonElement>('liveAgentExportSubtitlesBtn'),
+		liveAgentRestartNovaBtn: getElement<HTMLButtonElement>('liveAgentRestartNovaBtn'),
+		liveAgentTranscriptionContent: getElement<HTMLDivElement>('liveAgentTranscriptionContent'),
 
 		// STT controls
 		sttSection: getElement<HTMLDivElement>('sttSection'),

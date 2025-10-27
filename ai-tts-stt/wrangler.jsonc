@@ -4,7 +4,7 @@
  */
 {
 	"$schema": "node_modules/wrangler/config-schema.json",
-	"name": "cf-realtime-audio",
+	"name": "fryan-cf-realtime-audio",
 	"main": "src/index.ts",
 	"compatibility_date": "2025-08-06",
 	"migrations": [

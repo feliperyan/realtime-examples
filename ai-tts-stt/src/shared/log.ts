@@ -9,7 +9,7 @@
  * - aliasOnce(name): logs a one-time mapping and switches future logs to use the name
  * - setAliasSilently(name): switches to the name without emitting the mapping log (useful on restore)
  */
-export function createAdapterLogger(adapter: 'TTS' | 'STT', id: DurableObjectId) {
+export function createAdapterLogger(adapter: 'TTS' | 'STT' | 'LiveAgent', id: DurableObjectId) {
 	const adapterName = `${adapter}Adapter`;
 	const originalId = id.toString();
 	let currentLabel = originalId;

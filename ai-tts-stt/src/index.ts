@@ -29,7 +29,7 @@ export default {
 
 		// Route: GET /<session-name>/player OR GET /<session-name>/publisher
 		// These are stateless requests to serve the UI. Both routes serve the same HTML file.
-		if (action && ['player', 'publisher'].includes(action) && request.method === 'GET') {
+		if (action && ['player', 'publisher', 'live-agent'].includes(action) && request.method === 'GET') {
 			return new Response(playerHtml, {
 				headers: { 'Content-Type': 'text/html;charset=UTF-8' },
 			});

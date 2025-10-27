@@ -72,6 +72,40 @@
             </div>
         </div>
 
+        <!-- Live Agent Section -->
+        <div class="section hidden" id="liveAgentSection">
+            <h2>Live Agent</h2>
+            <div class="stt-controls">
+                <button id="liveAgentStartMicBtn" class="btn-danger">
+                    <span class="button-text">Start Mic</span>
+                    <div class="spinner"></div>
+                </button>
+                <button id="liveAgentStopMicBtn" class="btn-secondary hidden">
+                    <span class="button-text">Stop Mic</span>
+                </button>
+                <button id="liveAgentStartForwardingBtn" class="btn-success" disabled>
+                    <span class="button-text">Start Forwarding</span>
+                    <div class="spinner"></div>
+                </button>
+                <button id="liveAgentStopForwardingBtn" class="btn-warning-outline hidden">
+                    <span class="button-text">Stop Forwarding</span>
+                </button>
+            </div>
+
+            <div id="liveAgentTranscriptionDisplay" class="transcription-box">
+                <div class="transcription-header">
+                    <h3>Live Transcription</h3>
+                    <div class="transcription-actions">
+                        <button id="liveAgentClearTranscriptionBtn">Clear</button>
+                        <button id="liveAgentExportSubtitlesBtn">Export Subtitles</button>
+                        <button id="liveAgentRestartNovaBtn" title="Debug: close and reconnect Nova STT">Restart Nova
+                            STT</button>
+                    </div>
+                </div>
+                <div id="liveAgentTranscriptionContent"></div>
+            </div>
+        </div>
+
         <!-- Publisher: Step 3 - Generate Speech -->
         <div class="section hidden disabled" id="generateSection">
             <h2>Step 3: Generate Speech</h2>

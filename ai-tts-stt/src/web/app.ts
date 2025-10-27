@@ -14,6 +14,8 @@ import { GenerateControls } from './ui/generateControls';
 import { ListenerControls } from './ui/listenerControls';
 import { STTControls } from './ui/sttControls';
 import { TranscriptionList } from './ui/transcriptionList';
+import { LiveAgentControls } from './ui/liveAgentControls';
+import { LiveAgentTranscriptionList } from './ui/liveAgentTranscriptionList';
 import { DebugLog } from './ui/debugLog';
 
 // Services
@@ -29,6 +31,8 @@ let generateControls: GenerateControls;
 let listenerControls: ListenerControls;
 let sttControls: STTControls;
 let transcriptionList: TranscriptionList;
+let liveAgentControls: LiveAgentControls;
+let liveAgentTranscriptionList: LiveAgentTranscriptionList;
 let debugLog: DebugLog;
 
 /**
@@ -49,6 +53,7 @@ function initializeApp() {
 	statusIndicator = new StatusIndicator(elements);
 	debugLog = new DebugLog(elements);
 	transcriptionList = new TranscriptionList(elements);
+	liveAgentTranscriptionList = new LiveAgentTranscriptionList(elements);
 
 	publisherControls = new PublisherControls(elements, handlePublish, handleUnpublish);
 
@@ -67,6 +72,17 @@ function initializeApp() {
 		handleRestartNova
 	);
 
+	liveAgentControls = new LiveAgentControls(
+		elements,
+		handleLiveAgentStartRecording,
+		handleLiveAgentStopRecording,
+		handleLiveAgentStartForwarding,
+		handleLiveAgentStopForwarding,
+		handleLiveAgentClearTranscriptions,
+		handleLiveAgentExportSubtitles,
+		handleLiveAgentRestartNova
+	);
+
 	// Bind publisher tab events
 	elements.tabTTS.addEventListener('click', () => setState({ publisherTab: 'tts' }));
 	elements.tabSTT.addEventListener('click', () => setState({ publisherTab: 'stt' }));
@@ -79,12 +95,17 @@ function initializeApp() {
 		statusIndicator.update(newState);
 		debugLog.update(newState);
 		transcriptionList.update(newState);
+		liveAgentTranscriptionList.update(newState);
 		applyPublisherTabVisibility(newState);
 
 		if (newState.userRole === 'publisher') {
 			publisherControls.update(newState);
 			generateControls.update(newState);
 			sttControls.update(newState);
+		}
+
+		if (newState.userRole === 'live-agent') {
+			liveAgentControls.update(newState);
 		}
 
 		listenerControls.update(newState);
@@ -109,6 +130,14 @@ function setupUIForRole() {
 		elements.pageTitle.textContent = 'TTS Publisher';
 		setVisible(elements.publisherTabs, true);
 		applyPublisherTabVisibility(state);
+	} else if (state.userRole === 'live-agent') {
+		elements.pageTitle.textContent = 'Live Agent';
+		setVisible(elements.publisherTabs, false);
+		setVisible(elements.publisherSection, false);
+		setVisible(elements.generateSection, false);
+		setVisible(elements.sttSection, false);
+		setVisible(elements.listenerSection, false);
+		setVisible(elements.liveAgentSection, true);
 	} else {
 		elements.pageTitle.textContent = 'TTS Listener';
 		setVisible(elements.publisherTabs, false);
@@ -328,6 +357,60 @@ function handleExportSubtitles(format: 'vtt' | 'srt') {
 }
 
 async function handleRestartNova() {
+	await sttService.restartNova();
+}
+
+// --- Live Agent Handlers ---
+
+async function handleLiveAgentStartRecording() {
+	liveAgentControls.setStartRecordingLoading(true);
+	try {
+		await sttService.startRecording();
+	} finally {
+		liveAgentControls.setStartRecordingLoading(false);
+	}
+}
+
+async function handleLiveAgentStopRecording() {
+	sttService.stopRecording();
+}
+
+async function handleLiveAgentStartForwarding() {
+	liveAgentControls.setStartForwardingLoading(true);
+	try {
+		await sttService.startForwarding();
+	} finally {
+		liveAgentControls.setStartForwardingLoading(false);
+	}
+}
+
+async function handleLiveAgentStopForwarding() {
+	await sttService.stopForwarding();
+}
+
+function handleLiveAgentClearTranscriptions() {
+	sttService.clearTranscriptions();
+	liveAgentTranscriptionList.clear();
+}
+
+function handleLiveAgentExportSubtitles(format: 'vtt' | 'srt') {
+	const state = getState();
+
+	try {
+		if (format === 'vtt') {
+			SubtitleExporter.exportVTT(state.transcripts, state.sessionId);
+		} else {
+			SubtitleExporter.exportSRT(state.transcripts, state.sessionId);
+		}
+
+		const count = state.transcripts.filter((t) => t.isFinal).length;
+		log(`📁 Exported ${count} transcriptions as ${format.toUpperCase()}`);
+	} catch (error) {
+		log(`⚠️ ${(error as Error).message}`);
+	}
+}
+
+async function handleLiveAgentRestartNova() {
 	await sttService.restartNova();
 }
 

@@ -88,16 +88,16 @@ class StateStore extends EventTarget {
 }
 
 // Parse URL to get session name and role
-function parseUrl(): { sessionId: string; userRole: 'player' | 'publisher' } {
+function parseUrl(): { sessionId: string; userRole: 'player' | 'publisher' | 'live-agent' } {
 	const pathParts = window.location.pathname.split('/').filter((p) => p);
 
-	if (pathParts.length < 2 || !['player', 'publisher'].includes(pathParts[1])) {
-		throw new Error('Invalid URL. Expected: /<session-name>/player or /<session-name>/publisher');
+	if (pathParts.length < 2 || !['player', 'publisher', 'live-agent'].includes(pathParts[1])) {
+		throw new Error('Invalid URL. Expected: /<session-name>/player, /<session-name>/publisher, or /<session-name>/live-agent');
 	}
 
 	return {
 		sessionId: pathParts[0],
-		userRole: pathParts[1] as 'player' | 'publisher',
+		userRole: pathParts[1] as 'player' | 'publisher' | 'live-agent',
 	};
 }
 
