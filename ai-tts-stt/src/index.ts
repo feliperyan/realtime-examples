@@ -3,6 +3,7 @@ import playerHtml from './player.html';
 // Export Durable Objects from their separate modules
 export { TTSAdapter } from './tts-adapter';
 export { STTAdapter } from './stt-adapter';
+export { LiveAgent } from './live-agent';
 
 /**
  * Main Worker Handler
@@ -60,6 +61,13 @@ export default {
 			const sttAdapterId = env.STT_ADAPTER.idFromName(sessionName);
 			const sttAdapterStub = env.STT_ADAPTER.get(sttAdapterId);
 			return await sttAdapterStub.fetch(request);
+		}
+
+		// Route: /<session-name>/live-agent/* - LiveAgent endpoints
+		if (action === 'live-agent' && pathParts.length > 2) {
+			const liveAgentId = env.LIVE_AGENT.idFromName(sessionName);
+			const liveAgentStub = env.LIVE_AGENT.get(liveAgentId);
+			return await liveAgentStub.fetch(request);
 		}
 
 		// All other actions are stateful and must be forwarded to the Durable Object.

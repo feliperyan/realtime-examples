@@ -103,4 +103,23 @@ export class ApiClient {
 		const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
 		return `${protocol}//${window.location.host}/${this.sessionId}/stt/transcription-stream`;
 	}
+
+	// LiveAgent endpoints
+	async liveAgentStart(): Promise<void> {
+		const res = await fetch(`/${this.sessionId}/live-agent/start`, {
+			method: 'POST',
+		});
+		if (!res.ok) {
+			throw new Error(`Failed to start live agent: ${await res.text()}`);
+		}
+	}
+
+	async liveAgentStop(): Promise<void> {
+		const res = await fetch(`/${this.sessionId}/live-agent/stop`, {
+			method: 'POST',
+		});
+		if (!res.ok) {
+			throw new Error(`Failed to stop live agent: ${await res.text()}`);
+		}
+	}
 }

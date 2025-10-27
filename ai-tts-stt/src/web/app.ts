@@ -365,27 +365,73 @@ async function handleRestartNova() {
 async function handleLiveAgentStartRecording() {
 	liveAgentControls.setStartRecordingLoading(true);
 	try {
+		// Step 1: Publish TTS session (for audio playback)
+		log('📣 Publishing TTS session for live agent...');
+		const speaker = 'zeus'; // Default speaker for live agent
+		await api.publish(speaker);
+		log('✅ TTS session published');
+
+		// Step 2: Start STT recording
+		log('🎤 Starting STT recording...');
 		await sttService.startRecording();
+		
+		// Wait a bit for PC to connect
+		await new Promise(resolve => setTimeout(resolve, 1000));
+		
+		// Step 3: Start STT forwarding
+		log('🔄 Starting STT forwarding...');
+		await sttService.startForwarding();
+		
+		// Step 4: Start LiveAgent orchestrator
+		log('🤖 Starting LiveAgent orchestrator...');
+		await api.liveAgentStart();
+		
+		// Step 5: Connect to TTS audio stream
+		log('🔊 Connecting to TTS audio stream...');
+		await handleConnect();
+		
+		log('✅ Live Agent fully started and ready!');
+	} catch (error) {
+		log(`❌ Live Agent start error: ${(error as Error).message}`);
+		throw error;
 	} finally {
 		liveAgentControls.setStartRecordingLoading(false);
 	}
 }
 
 async function handleLiveAgentStopRecording() {
-	sttService.stopRecording();
-}
-
-async function handleLiveAgentStartForwarding() {
-	liveAgentControls.setStartForwardingLoading(true);
 	try {
-		await sttService.startForwarding();
-	} finally {
-		liveAgentControls.setStartForwardingLoading(false);
+		log('⏹️ Stopping Live Agent...');
+		
+		// Stop LiveAgent orchestrator
+		await api.liveAgentStop();
+		
+		// Stop STT forwarding
+		await sttService.stopForwarding();
+		
+		// Stop STT recording
+		sttService.stopRecording();
+		
+		// Disconnect from TTS
+		handleDisconnect();
+		
+		// Unpublish TTS
+		await api.unpublish();
+		
+		log('✅ Live Agent stopped');
+	} catch (error) {
+		log(`❌ Live Agent stop error: ${(error as Error).message}`);
 	}
 }
 
+async function handleLiveAgentStartForwarding() {
+	// Not used in live-agent mode - handled by Start Mic
+	log('ℹ️ Forwarding is automatically managed in Live Agent mode');
+}
+
 async function handleLiveAgentStopForwarding() {
-	await sttService.stopForwarding();
+	// Not used in live-agent mode - handled by Stop Mic
+	log('ℹ️ Forwarding is automatically managed in Live Agent mode');
 }
 
 function handleLiveAgentClearTranscriptions() {

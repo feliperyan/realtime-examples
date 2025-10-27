@@ -23,8 +23,6 @@ export class LiveAgentControls {
 		const {
 			liveAgentStartMicBtn,
 			liveAgentStopMicBtn,
-			liveAgentStartForwardingBtn,
-			liveAgentStopForwardingBtn,
 			liveAgentClearTranscriptionBtn,
 			liveAgentExportSubtitlesBtn,
 			liveAgentRestartNovaBtn,
@@ -32,8 +30,6 @@ export class LiveAgentControls {
 
 		liveAgentStartMicBtn.addEventListener('click', this.onStartRecording);
 		liveAgentStopMicBtn.addEventListener('click', this.onStopRecording);
-		liveAgentStartForwardingBtn.addEventListener('click', this.onStartForwarding);
-		liveAgentStopForwardingBtn.addEventListener('click', this.onStopForwarding);
 		liveAgentClearTranscriptionBtn.addEventListener('click', this.onClear);
 
 		liveAgentExportSubtitlesBtn.addEventListener('click', () => {
@@ -45,19 +41,13 @@ export class LiveAgentControls {
 	}
 
 	update(state: AppState) {
-		const { liveAgentStartMicBtn, liveAgentStopMicBtn, liveAgentStartForwardingBtn, liveAgentStopForwardingBtn } = this.elements;
+		const { liveAgentStartMicBtn, liveAgentStopMicBtn } = this.elements;
 
-		const { isMicActive, isForwarding, pcConnected } = state.sttState;
+		const { isMicActive } = state.sttState;
 
-		// Mic buttons
+		// Simple toggle: Start button when inactive, Stop button when active
 		setVisible(liveAgentStartMicBtn, !isMicActive);
 		setVisible(liveAgentStopMicBtn, isMicActive);
-		liveAgentStopMicBtn.disabled = isForwarding; // Cannot stop mic while forwarding
-
-		// Forwarding buttons
-		liveAgentStartForwardingBtn.disabled = !(isMicActive && pcConnected) || isForwarding;
-		setVisible(liveAgentStartForwardingBtn, !isForwarding);
-		setVisible(liveAgentStopForwardingBtn, isForwarding);
 	}
 
 	setStartRecordingLoading(loading: boolean) {
@@ -65,6 +55,6 @@ export class LiveAgentControls {
 	}
 
 	setStartForwardingLoading(loading: boolean) {
-		setButtonLoading(this.elements.liveAgentStartForwardingBtn, loading);
+		// Not used in simplified live-agent UI
 	}
 }

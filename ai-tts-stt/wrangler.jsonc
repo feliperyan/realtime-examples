@@ -4,7 +4,7 @@
  */
 {
 	"$schema": "node_modules/wrangler/config-schema.json",
-	"name": "fryan-cf-realtime-audio",
+	"name": "fryan-cf-realtime-audio-2",
 	"main": "src/index.ts",
 	"compatibility_date": "2025-08-06",
 	"migrations": [
@@ -20,6 +20,12 @@
 			],
 			"tag": "v2"
 		},
+		{
+			"new_sqlite_classes": [
+				"LiveAgent"
+			],
+			"tag": "v3"
+		},
 	],
 	"assets": {
         "directory": "public"
@@ -33,6 +39,10 @@
 			{
 				"class_name": "STTAdapter",
 				"name": "STT_ADAPTER"
+			},
+			{
+				"class_name": "LiveAgent",
+				"name": "LIVE_AGENT"
 			}
 		]
 	},
@@ -41,7 +51,7 @@
 	},
 	"vars": {
 		"SFU_API_BASE": "https://rtc.live.cloudflare.com/v1",
-		"CF_ACCOUNT": "8477399eb04accc1792af96aeaa25222",
-		"REALTIME_SFU_APP_ID": "66e52edd9e080a5c01c0b4d559fd0e3c",
+		"CF_ACCOUNT": "14c3ac5c1b9c191facc9a1e2247ec5b9",
+		"REALTIME_SFU_APP_ID": "eff792bdd3b50f27db24afb6a36cb93b",
 	}
 }

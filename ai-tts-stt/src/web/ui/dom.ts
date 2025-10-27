@@ -34,8 +34,6 @@ export interface UIElements {
 	liveAgentSection: HTMLDivElement;
 	liveAgentStartMicBtn: HTMLButtonElement;
 	liveAgentStopMicBtn: HTMLButtonElement;
-	liveAgentStartForwardingBtn: HTMLButtonElement;
-	liveAgentStopForwardingBtn: HTMLButtonElement;
 	liveAgentClearTranscriptionBtn: HTMLButtonElement;
 	liveAgentExportSubtitlesBtn: HTMLButtonElement;
 	liveAgentRestartNovaBtn: HTMLButtonElement;
@@ -101,8 +99,6 @@ export function cacheElements(): UIElements {
 		liveAgentSection: getElement<HTMLDivElement>('liveAgentSection'),
 		liveAgentStartMicBtn: getElement<HTMLButtonElement>('liveAgentStartMicBtn'),
 		liveAgentStopMicBtn: getElement<HTMLButtonElement>('liveAgentStopMicBtn'),
-		liveAgentStartForwardingBtn: getElement<HTMLButtonElement>('liveAgentStartForwardingBtn'),
-		liveAgentStopForwardingBtn: getElement<HTMLButtonElement>('liveAgentStopForwardingBtn'),
 		liveAgentClearTranscriptionBtn: getElement<HTMLButtonElement>('liveAgentClearTranscriptionBtn'),
 		liveAgentExportSubtitlesBtn: getElement<HTMLButtonElement>('liveAgentExportSubtitlesBtn'),
 		liveAgentRestartNovaBtn: getElement<HTMLButtonElement>('liveAgentRestartNovaBtn'),

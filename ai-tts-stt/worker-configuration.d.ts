@@ -10,6 +10,7 @@ declare namespace Cloudflare {
 		SFU_API_BASE: string;
 		TTS_ADAPTER: DurableObjectNamespace<import("./src/index").TTSAdapter>;
 		STT_ADAPTER: DurableObjectNamespace<import("./src/index").STTAdapter>;
+        LIVE_AGENT: DurableObjectNamespace<import("./src/index").LiveAgent>;
 	}
 }
 interface Env extends Cloudflare.Env {}
