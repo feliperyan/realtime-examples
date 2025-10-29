@@ -24,6 +24,7 @@ enum AuraSpeaker {
 	HELIOS = 'helios',
 	HERA = 'hera',
 	STELLA = 'stella',
+	AUSTRALIAN = 'aura-2-hyperion-en', 
 }
 
 // Aura Audio Encoding options
@@ -365,7 +366,8 @@ export class TTSAdapter extends DurableObject<Env> {
 		}
 
 		// Parse request body to get speaker selection
-		let selectedSpeaker = AuraSpeaker.ZEUS; // Default
+		// let selectedSpeaker = AuraSpeaker.ZEUS; // Default
+		let selectedSpeaker = AuraSpeaker.AUSTRALIAN; // Default
 		try {
 			const body = (await request.json()) as any;
 			if (body?.speaker) {

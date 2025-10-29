@@ -1,5 +1,7 @@
-import { DurableObject } from 'cloudflare:workers';
+// import { DurableObject } from 'cloudflare:workers';
 import { createAdapterLogger } from './shared/log';
+
+import { Agent } from "agents";
 
 /**
  * LiveAgent Durable Object
@@ -7,7 +9,33 @@ import { createAdapterLogger } from './shared/log';
  * Orchestrates the flow: STT → (LLM) → TTS
  * For now, implements a simple echo: transcription → TTS
  */
-export class LiveAgent extends DurableObject<Env> {
+
+// The user in this case is the human speaking to the agent
+interface message {
+	role: 'user' | 'assistant' | 'system';
+	content: string;
+}
+
+interface AgentState {
+	conversation_log: message[];
+	conversation_summary: message[];
+	text_messages: message[];
+	system_prompt: string;
+}
+
+const SYSTEM_PROMPT = `You are a person talking on the phone. You respond with short, simple sentences and act like you are having a phone conversation.
+Important: You are not, I repeat, you are not, a helpful assistant. You act as a human being talking on the phone. 
+Important: You're answers contain no formatting, no markdown, no html, etc.`;
+
+export class LiveAgent extends Agent<Env, AgentState> {
+
+	initialState: AgentState = {
+		conversation_log: [],
+		conversation_summary: [],	
+		text_messages: [],
+		system_prompt: SYSTEM_PROMPT
+	};
+
 	protected env: Env;
 	protected ctx: DurableObjectState;
 	private logger: ReturnType<typeof createAdapterLogger>;
@@ -56,10 +84,37 @@ export class LiveAgent extends DurableObject<Env> {
 				return this.handleStart(sessionName);
 			case 'stop':
 				return this.handleStop();
+			case 'text-message':				
+				const result = await this.handlePseudoTextMessage(request);
+				if (result) {
+					return new Response(result, { status: 200 });
+				}
+				else {
+					return new Response("error", { status: 500 });
+				}
+				
 			default:
 				return new Response('LiveAgent: Use POST /start or /stop', { status: 200 });
 		}
 	}
+
+    async handlePseudoTextMessage(text: Request | null): Promise<string | null>{
+		
+		const b = await text?.text();
+		
+		if (!b) {
+		    this.logger.error(`Felipe got no body for text message: ${text}`);
+			return null;
+		}
+        
+		this.logger.log(`Received pseudo text message: ${b}`);
+		this.setState({
+			...this.state,
+			text_messages: [...this.state.text_messages, { role: 'user', content: b }],
+		});
+
+		return "ok"
+    }
 
 	/**
 	 * Starts the live agent pipeline:
@@ -182,8 +237,39 @@ export class LiveAgent extends DurableObject<Env> {
 
 		this.logger.log(`Received final transcript: "${transcript}"`);
 
+		const response = await this.getResponseFromLLM(transcript);		
+
 		// Echo the transcript through TTS
-		await this.echoToTTS(transcript);
+		await this.echoToTTS(response);
+	}
+
+	private async getResponseFromLLM(text: string): Promise<string> {
+		// const resp = await this.env.AI.run("@cf/openai/gpt-oss-20b" as any, {
+		// 	instructions: "",
+		// 	input: text,
+		// 	reasoning: {
+		// 		effort: "medium",
+		// 		summary: "concise"
+		// 	}
+		// }) as ChatGPTOSS20BResponse;
+		
+		try {
+			const resp = await this.env.AI.run("@cf/meta/llama-3.1-8b-instruct", {
+				messages: [
+					{role: "system", content: SYSTEM_PROMPT}, 
+					{role: "user", content: text}
+				] 
+			});
+
+			this.logger.log(`FelipeLog - response: ${JSON.stringify(resp)}`);
+			
+			// return resp.output[1].content[0].text;
+			return resp.response ? resp.response : "no answer";
+		}
+		catch (error) {
+			this.logger.error(`FelipeLog = Error getting response from LLM:`, error);
+			return "A placeholder text because LLM call failed";
+		}
 	}
 
 	/**
@@ -230,4 +316,69 @@ export class LiveAgent extends DurableObject<Env> {
 			this.transcriptionWS = null;
 		}
 	}
+}
+
+
+// --------- CHATGPT OSS 20B RESPONSE ---------
+
+/**
+ * Represents the main response object from the API.
+ */
+export interface ChatGPTOSS20BResponse {
+    id: string;
+    created_at: number;
+    instructions: string;
+    metadata: unknown | null; // Use unknown for flexibility if structure is not strictly defined, or 'null' if it's strictly null
+    model: string;
+    object: string; // Likely "response"
+    output: OutputItem[];
+    parallel_tool_calls: boolean;
+    temperature: number;
+    tool_choice: string;
+    tools: unknown[]; // Array of unknown as the structure is an empty array in the example
+    top_p: number;
+    background: boolean;
+    max_output_tokens: number;
+    max_tool_calls: number | null;
+    previous_response_id: string | null;
+    prompt: string | null;
+    reasoning: Reasoning;
+    service_tier: string;
+    status: string; // Likely "completed"
+    text: string | null;
+    top_logprobs: number;
+    truncation: string; // Likely "disabled"
+    usage: Usage;
+    user: unknown | null;
+}
+
+// --- Nested Interfaces ---
+
+export interface OutputItem {
+    id: string;
+    content: ContentItem[];
+    summary: unknown[]; // Array of unknown as the structure is an empty array in the example
+    type: 'reasoning' | 'message'; // Based on the two examples
+    encrypted_content: string | null;
+    status: string | null;
+    role?: 'assistant'; // Only present on 'message' type output, added as optional
+}
+
+export interface ContentItem {
+    text: string;
+    type: 'reasoning_text' | 'output_text';
+    annotations?: unknown[]; // Only present on 'output_text' type content, added as optional
+    logprobs?: unknown | null; // Only present on 'output_text' type content, added as optional
+}
+
+export interface Reasoning {
+    effort: string; // Likely "medium"
+    generate_summary: unknown | null;
+    summary: string; // Likely "concise"
+}
+
+export interface Usage {
+    prompt_tokens: number;
+    completion_tokens: number;
+    total_tokens: number;
 }

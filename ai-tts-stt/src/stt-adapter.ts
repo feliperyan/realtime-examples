@@ -635,6 +635,8 @@ export class STTAdapter extends DurableObject<Env> {
 		const params = new URLSearchParams({
 			encoding: 'linear16',
 			sample_rate: '16000',
+			endpointing: '8000',
+			interim_results: 'true',
 		});
 
 		const url = `https://api.cloudflare.com/client/v4/accounts/${this.env.CF_ACCOUNT}/ai/run/${STT_MODEL}?${params.toString()}`;

@@ -3,7 +3,7 @@
  */
 
 // Model names
-export const TTS_MODEL = '@cf/deepgram/aura-1';
+export const TTS_MODEL = '@cf/deepgram/aura-2-en';
 export const STT_MODEL = '@cf/deepgram/nova-3';
 
 // Timeouts and intervals

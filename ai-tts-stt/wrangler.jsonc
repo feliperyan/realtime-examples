@@ -6,6 +6,9 @@
 	"$schema": "node_modules/wrangler/config-schema.json",
 	"name": "fryan-cf-realtime-audio-2",
 	"main": "src/index.ts",
+	"compatibility_flags": [
+		"nodejs_compat"
+	],
 	"compatibility_date": "2025-08-06",
 	"migrations": [
 		{
@@ -28,8 +31,8 @@
 		},
 	],
 	"assets": {
-        "directory": "public"
-    },
+		"directory": "public"
+	},
 	"durable_objects": {
 		"bindings": [
 			{
@@ -49,9 +52,12 @@
 	"observability": {
 		"enabled": true
 	},
+	"ai": {
+		"binding": "AI"
+	},
 	"vars": {
 		"SFU_API_BASE": "https://rtc.live.cloudflare.com/v1",
 		"CF_ACCOUNT": "14c3ac5c1b9c191facc9a1e2247ec5b9",
-		"REALTIME_SFU_APP_ID": "eff792bdd3b50f27db24afb6a36cb93b",
+		"REALTIME_SFU_APP_ID": "a05bf305f4b3f0010d721cc126f1805c",
 	}
 }

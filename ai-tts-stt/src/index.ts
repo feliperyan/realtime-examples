@@ -5,6 +5,9 @@ export { TTSAdapter } from './tts-adapter';
 export { STTAdapter } from './stt-adapter';
 export { LiveAgent } from './live-agent';
 
+import { WorkerEntrypoint } from "cloudflare:workers";
+
+
 /**
  * Main Worker Handler
  *
@@ -12,7 +15,7 @@ export { LiveAgent } from './live-agent';
  * (the first URL path segment). This ensures that multiple requests with the same session name are handled
  * by the same instance, allowing session-specific requests to the correct Durable Object instance.
  */
-export default {
+export default  {
 	async fetch(request, env, ctx): Promise<Response> {
 		const url = new URL(request.url);
 		const pathParts = url.pathname
@@ -65,6 +68,8 @@ export default {
 
 		// Route: /<session-name>/live-agent/* - LiveAgent endpoints
 		if (action === 'live-agent' && pathParts.length > 2) {
+			console.log(`parts: ${pathParts.length} | action: ${action} | sessionName: ${sessionName}`);
+
 			const liveAgentId = env.LIVE_AGENT.idFromName(sessionName);
 			const liveAgentStub = env.LIVE_AGENT.get(liveAgentId);
 			return await liveAgentStub.fetch(request);
@@ -75,8 +80,20 @@ export default {
 			const id = env.TTS_ADAPTER.idFromName(sessionName);
 			const stub = env.TTS_ADAPTER.get(id);
 			return stub.fetch(request);
-		}
+		}		
 
 		return new Response('Not Found', { status: 404 });
-	},
+	},	
+
 } satisfies ExportedHandler<Env>;
+
+
+export class FRyanRPC extends WorkerEntrypoint<Env> {
+
+	async processTextMessage(req: Request, agentName: string): Promise<string | null> {
+		const liveAgentId = this.env.LIVE_AGENT.idFromName(agentName);
+		const liveAgentStub = this.env.LIVE_AGENT.get(liveAgentId);		
+		return await liveAgentStub.handlePseudoTextMessage(req);
+	}
+	
+}
