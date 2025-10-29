@@ -11,12 +11,14 @@ import {
 	DEFAULT_INACTIVITY_TIMEOUT_MS,
 	DEFAULT_MAX_RECONNECT_ATTEMPTS,
 	STT_DEBUG_GRACE_MS,
-	STT_NOVA_KEEPALIVE_MS,
 	STT_MAX_QUEUE_BYTES,
 	STT_MIN_BATCH_BYTES,
 	STT_MAX_BATCH_BYTES,
 	STT_MAX_DRAIN_BATCHES_PER_TURN,
 	STT_MAX_DRAIN_SLICE_MS,
+	FLUX_EAGER_EOT_THRESHOLD,
+	FLUX_EOT_THRESHOLD,
+	FLUX_EOT_TIMEOUT_MS,
 } from './shared/config';
 
 /**
@@ -575,13 +577,15 @@ export class STTAdapter extends DurableObject<Env> {
 			}
 
 			// After draining audio frames in this tick, send control messages if pending and queue empty
+			// NOTE: Flux may not support Finalize/CloseStream - turn detection handles session boundaries
+			// If errors occur, these messages may need to be removed or replaced with Flux-specific protocol
 			if (this.sttQueuedBytes === 0) {
 				const ws = await this.getOrCreateNovaSTTConnection();
 				if (ws.readyState === WebSocket.OPEN) {
 					if (this.stateStore.state.pendingFinalize) {
 						try {
 							ws.send(JSON.stringify({ type: 'Finalize' }));
-							this.logger.log(`Sent Finalize to Nova`);
+							this.logger.log(`Sent Finalize to Flux`);
 						} catch (e) {
 							this.logger.warn(`Failed to send Finalize:`, e);
 						}
@@ -589,7 +593,7 @@ export class STTAdapter extends DurableObject<Env> {
 					} else if (this.stateStore.state.pendingClose) {
 						try {
 							ws.send(JSON.stringify({ type: 'CloseStream' }));
-							this.logger.log(`Sent CloseStream to Nova (inactivity)`);
+							this.logger.log(`Sent CloseStream to Flux (inactivity)`);
 						} catch (e) {
 							this.logger.warn(`Failed to send CloseStream:`, e);
 						}
@@ -629,19 +633,22 @@ export class STTAdapter extends DurableObject<Env> {
 	}
 
 	/**
-	 * Establishes WebSocket connection to Nova STT
+	 * Establishes WebSocket connection to Deepgram Flux STT with turn detection
 	 */
 	private async connectToNovaSTT(): Promise<WebSocket> {
+		// Build query parameters for Flux with turn detection
 		const params = new URLSearchParams({
 			encoding: 'linear16',
 			sample_rate: '16000',
-			endpointing: '8000',
-			interim_results: 'true',
+			// Flux turn detection parameters (all must be strings per API spec)
+			eager_eot_threshold: FLUX_EAGER_EOT_THRESHOLD.toString(),
+			eot_threshold: FLUX_EOT_THRESHOLD.toString(),
+			eot_timeout_ms: FLUX_EOT_TIMEOUT_MS.toString(),
 		});
 
 		const url = `https://api.cloudflare.com/client/v4/accounts/${this.env.CF_ACCOUNT}/ai/run/${STT_MODEL}?${params.toString()}`;
 
-		// Use fetch with Upgrade header to include Authorization header
+		// Use fetch with Upgrade header to establish WebSocket connection
 		const resp = await fetch(url, {
 			headers: {
 				Upgrade: 'websocket',
@@ -652,8 +659,8 @@ export class STTAdapter extends DurableObject<Env> {
 		const ws = resp.webSocket;
 
 		if (!ws) {
-			this.logger.log(`Nova WebSocket request error: ${await resp.text()}`);
-			throw new Error(`Failed to establish Nova WebSocket: ${resp.status}`);
+			this.logger.log(`Flux WebSocket request error: ${resp.status} ${await resp.text()}`);
+			throw new Error(`Failed to establish Flux WebSocket: ${resp.status}`);
 		}
 
 		// Accept the WebSocket to handle it in this Worker
@@ -670,7 +677,7 @@ export class STTAdapter extends DurableObject<Env> {
 		});
 
 		this.setupNovaSTTMessageHandlers(ws);
-		this.logger.log(`Connected to Nova WebSocket`);
+		this.logger.log(`Connected to Flux WebSocket with turn detection`);
 		// Resume draining queued audio upon successful connection
 		if (this.sttSendQueue.length > 0 || this.stateStore.state.pendingClose) {
 			this.scheduleSTTDrainSoon();
@@ -739,24 +746,68 @@ export class STTAdapter extends DurableObject<Env> {
 	}
 
 	/**
-	 * Handles messages from Nova STT WebSocket
+	 * Handles messages from Flux STT WebSocket with turn detection
 	 */
 	private handleNovaSTTMessage(data: string | ArrayBuffer) {
 		if (typeof data === 'string') {
 			try {
 				const response = JSON.parse(data);
-				this.logger.log(`STT Response:`, response);
-
-				// Stream transcription results back to connected SFU clients
-				this.broadcastTranscriptionResult(response);
-
-				// Handle finalize response (segment finalized, but keep connection)
-				if (response && response.from_finalize) {
-					this.logger.log(`Segment finalized (from_finalize: true)`);
-					// Optionally broadcast a segment finalized event
-					this.broadcastSegmentFinalized();
+				
+				// Flux wraps events in a TurnInfo type with an 'event' field
+				const eventType = response.event || response.type;
+				
+				if (response.type === 'TurnInfo' && eventType) {
+					// Flux turn detection events
+					this.logger.log(`Flux ${eventType}:`, response);
+					
+					switch (eventType) {
+						case 'StartOfTurn':
+							// New turn started
+							this.logger.log(`StartOfTurn - turn_index: ${response.turn_index}`);
+							this.broadcastTranscriptionResult(response);
+							break;
+						
+						case 'Update':
+							// Sent ~every 0.25s, interim transcription updates
+							this.broadcastTranscriptionResult(response);
+							break;
+						
+						case 'EagerEndOfTurn':
+							// Early signal that user likely finished - allows preparing response
+							this.logger.log(`EagerEndOfTurn detected - transcript: "${response.transcript}"`);
+							this.broadcastEagerEndOfTurn(response);
+							break;
+						
+						case 'TurnResumed':
+							// User continued speaking after EagerEndOfTurn
+							this.logger.log(`TurnResumed - user continued speaking`);
+							this.broadcastTurnResumed(response);
+							break;
+						
+						case 'EndOfTurn':
+							// Final turn boundary - definitive end of user's turn
+							this.logger.log(`EndOfTurn - turn_index: ${response.turn_index}`);
+							this.broadcastEndOfTurn(response);
+							break;
+						
+						default:
+							// Unknown Flux event - broadcast as-is
+							this.broadcastTranscriptionResult(response);
+					}
+				} else if (response.type === 'TurnInfo') {
+					// TurnInfo without recognized event - log and broadcast
+					this.logger.log(`Flux TurnInfo (no event):`, response);
+					this.broadcastTranscriptionResult(response);
+				} else {
+					// Legacy Nova format (no event type) - broadcast as-is
+					this.broadcastTranscriptionResult(response);
+					
+					// Handle legacy finalize response
+					if (response && response.from_finalize) {
+						this.logger.log(`Segment finalized (from_finalize: true)`);
+						this.broadcastSegmentFinalized();
+					}
 				}
-				// Note: Do NOT use response.created as a completion signal
 			} catch (error) {
 				this.logger.error(`Error parsing STT response:`, error);
 			}
@@ -765,35 +816,65 @@ export class STTAdapter extends DurableObject<Env> {
 
 	/**
 	 * Broadcasts transcription results to connected transcription clients
+	 * Normalizes Flux format to match Nova's structure for compatibility
 	 */
 	private broadcastTranscriptionResult(transcriptionData: any) {
+		// Normalize Flux format to Nova format for LiveAgent compatibility
+		let normalizedData = transcriptionData;
+		
+		// Check if this is Flux format (has transcript at top level)
+		if (transcriptionData.type === 'TurnInfo' && transcriptionData.transcript !== undefined) {
+			// Convert Flux format to Nova-like format
+			// Mark as final only for EndOfTurn (for backward compatibility with legacy handlers)
+			// EagerEndOfTurn is handled separately by turn detection event handlers
+			const isFinal = transcriptionData.event === 'EndOfTurn';
+			
+			normalizedData = {
+				is_final: isFinal,
+				channel: {
+					alternatives: [
+						{
+							transcript: transcriptionData.transcript,
+							confidence: transcriptionData.end_of_turn_confidence,
+							words: transcriptionData.words || [],
+						}
+					]
+				},
+				// Preserve Flux metadata for advanced processing
+				flux_event: transcriptionData.event,
+				flux_turn_index: transcriptionData.turn_index,
+				flux_confidence: transcriptionData.end_of_turn_confidence,
+				flux_audio_window: {
+					start: transcriptionData.audio_window_start,
+					end: transcriptionData.audio_window_end,
+				},
+			};
+		}
+		
+		const message = {
+			type: 'transcription',
+			data: normalizedData,
+			timestamp: Date.now(),
+		};
+		
 		// Add to buffer for late joiners
 		if (this.transcriptionBuffer.length > 100) {
 			// Keep only last 100 transcriptions
 			this.transcriptionBuffer.shift();
 		}
-		this.transcriptionBuffer.push({
-			type: 'transcription',
-			data: transcriptionData,
-			timestamp: Date.now(),
+		this.transcriptionBuffer.push(message);
+		
+		const webSockets = this.ctx.getWebSockets();
+		const transcriptionClients = webSockets.filter((ws) => {
+			const session = ws.deserializeAttachment() as SessionState | null;
+			return session && session.type === 'transcription-stream';
 		});
 
-		// Broadcast transcription to connected transcription stream clients
-		const webSockets = this.ctx.getWebSockets();
-		if (webSockets.length > 0) {
-			const transcriptionClients = webSockets.filter((ws) => {
-				const session = ws.deserializeAttachment() as SessionState | null;
-				return session && session.type === 'transcription-stream';
-			});
-
-			const message = JSON.stringify({
-				type: 'transcription',
-				data: transcriptionData,
-				timestamp: Date.now(),
-			});
-
+		if (transcriptionClients.length > 0) {
+			const messageStr = JSON.stringify(message);
+			
 			transcriptionClients.forEach((ws) => {
-				ws.send(message);
+				ws.send(messageStr);
 			});
 
 			this.logger.log(`Broadcasted transcription to ${transcriptionClients.length} client(s)`);
@@ -826,6 +907,61 @@ export class STTAdapter extends DurableObject<Env> {
 		const message = JSON.stringify({ type: 'segment_finalized', timestamp: Date.now() });
 		transcriptionClients.forEach((ws) => ws.send(message));
 		this.logger.log(`Broadcasted segment_finalized to ${transcriptionClients.length} client(s)`);
+	}
+
+	/**
+	 * Broadcasts EagerEndOfTurn event - early signal that user likely finished speaking
+	 * This allows the agent to start preparing a response before the final EndOfTurn
+	 */
+	private broadcastEagerEndOfTurn(fluxData: any) {
+		const webSockets = this.ctx.getWebSockets();
+		const transcriptionClients = webSockets.filter((ws) => {
+			const session = ws.deserializeAttachment() as SessionState | null;
+			return session && session.type === 'transcription-stream';
+		});
+		const message = JSON.stringify({
+			type: 'eager_end_of_turn',
+			data: fluxData,
+			timestamp: Date.now(),
+		});
+		transcriptionClients.forEach((ws) => ws.send(message));
+		this.logger.log(`Broadcasted eager_end_of_turn to ${transcriptionClients.length} client(s)`);
+	}
+
+	/**
+	 * Broadcasts TurnResumed event - user continued speaking after EagerEndOfTurn
+	 */
+	private broadcastTurnResumed(fluxData: any) {
+		const webSockets = this.ctx.getWebSockets();
+		const transcriptionClients = webSockets.filter((ws) => {
+			const session = ws.deserializeAttachment() as SessionState | null;
+			return session && session.type === 'transcription-stream';
+		});
+		const message = JSON.stringify({
+			type: 'turn_resumed',
+			data: fluxData,
+			timestamp: Date.now(),
+		});
+		transcriptionClients.forEach((ws) => ws.send(message));
+		this.logger.log(`Broadcasted turn_resumed to ${transcriptionClients.length} client(s)`);
+	}
+
+	/**
+	 * Broadcasts EndOfTurn event - final turn boundary, definitive end of user's turn
+	 */
+	private broadcastEndOfTurn(fluxData: any) {
+		const webSockets = this.ctx.getWebSockets();
+		const transcriptionClients = webSockets.filter((ws) => {
+			const session = ws.deserializeAttachment() as SessionState | null;
+			return session && session.type === 'transcription-stream';
+		});
+		const message = JSON.stringify({
+			type: 'end_of_turn',
+			data: fluxData,
+			timestamp: Date.now(),
+		});
+		transcriptionClients.forEach((ws) => ws.send(message));
+		this.logger.log(`Broadcasted end_of_turn to ${transcriptionClients.length} client(s)`);
 	}
 
 	/**
@@ -1005,22 +1141,12 @@ export class STTAdapter extends DurableObject<Env> {
 
 	/**
 	 * Schedule KeepAlive messages during pre-forwarding window
+	 * NOTE: Disabled for Flux - turn detection model may not require keepalive messages
 	 */
 	private async scheduleKeepAliveIfPreForwarding() {
-		// Check gating conditions
-		if (!this.novaSTTWebSocket || this.novaSTTWebSocket.readyState !== WebSocket.OPEN) {
-			return; // Nova not open
-		}
-		if (!this.stateStore.state.sfuSessionId) {
-			return; // No SFU session established
-		}
-		if (this.stateStore.state.sfuAdapterId) {
-			return; // Forwarding already active
-		}
-
-		// Schedule next KeepAlive in STT_NOVA_KEEPALIVE_MS (5s by default)
-		await this.stateStore.update({ keepAliveDeadline: Date.now() + STT_NOVA_KEEPALIVE_MS });
-		this.logger.log(`KeepAlive scheduled for pre-forwarding window`);
+		// Flux handles turn detection natively, keepalive may not be needed
+		// If connection timeouts occur, re-enable this with appropriate interval
+		return;
 	}
 
 	/**
@@ -1130,32 +1256,12 @@ export class STTAdapter extends DurableObject<Env> {
 			needsSave = true;
 		}
 
-		// Check for KeepAlive
+		// Check for KeepAlive (disabled for Flux)
+		// Flux's turn detection may not require keepalive messages
 		if (this.stateStore.state.keepAliveDeadline && now >= this.stateStore.state.keepAliveDeadline) {
-			// Verify gating conditions again
-			if (
-				this.novaSTTWebSocket &&
-				this.novaSTTWebSocket.readyState === WebSocket.OPEN &&
-				this.stateStore.state.sfuSessionId &&
-				!this.stateStore.state.sfuAdapterId
-			) {
-				// Send KeepAlive
-				try {
-					this.novaSTTWebSocket.send(JSON.stringify({ type: 'KeepAlive' }));
-					this.logger.log(`Sent KeepAlive to Nova STT`);
-					// Schedule next KeepAlive
-					updates.keepAliveDeadline = now + STT_NOVA_KEEPALIVE_MS;
-					needsSave = true;
-				} catch (e) {
-					this.logger.warn(`Failed to send KeepAlive:`, e);
-					updates.keepAliveDeadline = undefined;
-					needsSave = true;
-				}
-			} else {
-				// Gating conditions no longer met, cancel KeepAlive
-				updates.keepAliveDeadline = undefined;
-				needsSave = true;
-			}
+			// Clear the deadline since KeepAlive is disabled
+			updates.keepAliveDeadline = undefined;
+			needsSave = true;
 		}
 
 		// Check for inactivity cleanup

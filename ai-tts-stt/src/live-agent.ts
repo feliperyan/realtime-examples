@@ -46,6 +46,10 @@ export class LiveAgent extends Agent<Env, AgentState> {
 	// Session state
 	private sessionName: string | null = null;
 	private isActive = false;
+	
+	// Turn detection state
+	private pendingLLMResponse: Promise<string> | null = null;
+	private lastEagerTranscript: string | null = null;
 
 	constructor(ctx: DurableObjectState, env: Env) {
 		super(ctx, env);
@@ -193,6 +197,7 @@ export class LiveAgent extends Agent<Env, AgentState> {
 
 	/**
 	 * Sets up handlers for transcription WebSocket messages
+	 * Handles Flux turn detection events for natural conversation flow
 	 */
 	private setupTranscriptionHandlers(): void {
 		if (!this.transcriptionWS) return;
@@ -201,8 +206,18 @@ export class LiveAgent extends Agent<Env, AgentState> {
 			try {
 				const data = JSON.parse(event.data as string);
 
-				// Handle transcription messages
-				if (data.type === 'transcription' && data.data) {
+				// Handle Flux turn detection events
+				if (data.type === 'eager_end_of_turn') {
+					// User likely finished speaking - can start preparing response
+					await this.handleEagerEndOfTurn(data);
+				} else if (data.type === 'turn_resumed') {
+					// User continued speaking - cancel any pending response
+					await this.handleTurnResumed(data);
+				} else if (data.type === 'end_of_turn') {
+					// Definitive turn end - generate and send response
+					await this.handleEndOfTurn(data);
+				} else if (data.type === 'transcription' && data.data) {
+					// Legacy format or interim updates
 					await this.handleTranscription(data);
 				} else if (data.type === 'stt_done') {
 					this.logger.log(`STT segment finalized`);
@@ -223,7 +238,7 @@ export class LiveAgent extends Agent<Env, AgentState> {
 	}
 
 	/**
-	 * Handles incoming transcription and echoes it through TTS
+	 * Handles incoming transcription (legacy format or interim updates)
 	 */
 	private async handleTranscription(data: any): Promise<void> {
 		// Extract transcript text
@@ -231,15 +246,94 @@ export class LiveAgent extends Agent<Env, AgentState> {
 		const isFinal = data.data?.is_final || false;
 
 		if (!transcript || !isFinal) {
-			// Only process final transcriptions for echo
+			// Only log interim updates for debugging
 			return;
 		}
 
-		this.logger.log(`Received final transcript: "${transcript}"`);
-
+		this.logger.log(`Received final transcript (legacy): "${transcript}"`);
+		// Legacy format - respond immediately (no turn detection)
 		const response = await this.getResponseFromLLM(transcript);		
+		await this.echoToTTS(response);
+	}
 
-		// Echo the transcript through TTS
+	/**
+	 * Handles EagerEndOfTurn event from Flux
+	 * User likely finished speaking - start preparing response early for lower latency
+	 */
+	private async handleEagerEndOfTurn(data: any): Promise<void> {
+		const transcript = data.data?.transcript || '';
+		
+		if (!transcript) {
+			this.logger.warn(`EagerEndOfTurn with no transcript`);
+			return;
+		}
+
+		this.logger.log(`🟡 EagerEndOfTurn: "${transcript}"`);
+		this.lastEagerTranscript = transcript;
+
+		// Start preparing LLM response early (but don't send yet)
+		// This reduces latency when EndOfTurn arrives
+		this.pendingLLMResponse = this.getResponseFromLLM(transcript);
+		
+		// Await the response to catch errors, but don't send to TTS yet
+		try {
+			await this.pendingLLMResponse;
+			this.logger.log(`Pre-generated response ready for turn end`);
+		} catch (error) {
+			this.logger.error(`Error pre-generating response:`, error);
+			this.pendingLLMResponse = null;
+		}
+	}
+
+	/**
+	 * Handles TurnResumed event from Flux
+	 * User continued speaking after EagerEndOfTurn - cancel pending response
+	 */
+	private async handleTurnResumed(data: any): Promise<void> {
+		this.logger.log(`🔄 TurnResumed - user continued speaking, canceling pending response`);
+		
+		// Cancel any pending LLM response since user is still talking
+		this.pendingLLMResponse = null;
+		this.lastEagerTranscript = null;
+	}
+
+	/**
+	 * Handles EndOfTurn event from Flux
+	 * Definitive turn boundary - send the prepared response or generate new one
+	 */
+	private async handleEndOfTurn(data: any): Promise<void> {
+		const transcript = data.data?.transcript || '';
+		const turnIndex = data.data?.turn_index;
+		
+		if (!transcript) {
+			this.logger.warn(`EndOfTurn with no transcript`);
+			return;
+		}
+
+		this.logger.log(`🟢 EndOfTurn (turn ${turnIndex}): "${transcript}"`);
+
+		let response: string;
+
+		// Check if we already prepared a response during EagerEndOfTurn
+		if (this.pendingLLMResponse && transcript === this.lastEagerTranscript) {
+			this.logger.log(`Using pre-generated response from EagerEndOfTurn`);
+			try {
+				response = await this.pendingLLMResponse;
+			} catch (error) {
+				this.logger.error(`Pending response failed, generating new:`, error);
+				response = await this.getResponseFromLLM(transcript);
+			}
+		} else {
+			// Transcript changed or no pending response - generate fresh
+			this.logger.log(`Generating fresh response for EndOfTurn`);
+			response = await this.getResponseFromLLM(transcript);
+		}
+
+		// Clear state
+		this.pendingLLMResponse = null;
+		this.lastEagerTranscript = null;
+
+		// Send response to TTS
 		await this.echoToTTS(response);
 	}
 
