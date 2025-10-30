@@ -24,7 +24,7 @@ interface AgentState {
 }
 
 const SYSTEM_PROMPT = `You are a person talking on the phone. You respond with short, simple sentences and act like you are having a phone conversation.
-Important: You are not, I repeat, you are not, a helpful assistant. You act as a human being talking on the phone. 
+Important: You act as a human being talking on the phone.
 Important: You're answers contain no formatting, no markdown, no html, etc.`;
 
 export class LiveAgent extends Agent<Env, AgentState> {
@@ -251,6 +251,13 @@ export class LiveAgent extends Agent<Env, AgentState> {
 		}
 
 		this.logger.log(`Received final transcript (legacy): "${transcript}"`);
+		
+		// Log user message to conversation
+		this.setState({
+			...this.state,
+			conversation_log: [...this.state.conversation_log, { role: 'user', content: transcript }],
+		});
+		
 		// Legacy format - respond immediately (no turn detection)
 		const response = await this.getResponseFromLLM(transcript);		
 		await this.echoToTTS(response);
@@ -311,6 +318,12 @@ export class LiveAgent extends Agent<Env, AgentState> {
 		}
 
 		this.logger.log(`🟢 EndOfTurn (turn ${turnIndex}): "${transcript}"`);
+		
+		// Log user message to conversation
+		this.setState({
+			...this.state,
+			conversation_log: [...this.state.conversation_log, { role: 'user', content: transcript }],
+		});
 
 		let response: string;
 
@@ -348,21 +361,41 @@ export class LiveAgent extends Agent<Env, AgentState> {
 		// }) as ChatGPTOSS20BResponse;
 		
 		try {
+			// Build messages with full conversation history for better context
+			const messages = [
+				{role: "system", content: this.state.system_prompt},
+				...this.state.conversation_log
+			];
+			
+			this.logger.log(`Sending ${messages.length} messages to LLM (including system prompt)`);
+			
 			const resp = await this.env.AI.run("@cf/meta/llama-3.1-8b-instruct", {
-				messages: [
-					{role: "system", content: SYSTEM_PROMPT}, 
-					{role: "user", content: text}
-				] 
+				messages: messages
 			});
 
 			this.logger.log(`FelipeLog - response: ${JSON.stringify(resp)}`);
 			
-			// return resp.output[1].content[0].text;
-			return resp.response ? resp.response : "no answer";
+			const response = resp.response ? resp.response : "no answer";
+			
+			// Log assistant message to conversation
+			this.setState({
+				...this.state,
+				conversation_log: [...this.state.conversation_log, { role: 'assistant', content: response }],
+			});
+			
+			return response;
 		}
 		catch (error) {
 			this.logger.error(`FelipeLog = Error getting response from LLM:`, error);
-			return "A placeholder text because LLM call failed";
+			const errorResponse = "A placeholder text because LLM call failed";
+			
+			// Log error response to conversation
+			this.setState({
+				...this.state,
+				conversation_log: [...this.state.conversation_log, { role: 'assistant', content: errorResponse }],
+			});
+			
+			return errorResponse;
 		}
 	}
 

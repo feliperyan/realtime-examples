@@ -24,6 +24,6 @@ export const STT_MAX_DRAIN_BATCHES_PER_TURN = 8;
 export const STT_MAX_DRAIN_SLICE_MS = 10;
 
 // Flux turn detection thresholds
-export const FLUX_EAGER_EOT_THRESHOLD = 0.4; // Confidence score (0.3-0.9) - triggers EagerEndOfTurn for low-latency responses
+export const FLUX_EAGER_EOT_THRESHOLD = 0.6; // Confidence score (0.3-0.9) - triggers EagerEndOfTurn for low-latency responses
 export const FLUX_EOT_THRESHOLD = 0.8; // Confidence score (0.5-0.9) - threshold for definitive EndOfTurn
 export const FLUX_EOT_TIMEOUT_MS = 3000; // ms - maximum wait time before forcing EndOfTurn

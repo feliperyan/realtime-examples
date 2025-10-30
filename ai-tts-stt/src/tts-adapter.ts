@@ -532,7 +532,7 @@ export class TTSAdapter extends DurableObject<Env> {
 	 */
 	private async connectToAura(): Promise<WebSocket> {
 		// Get the speaker that was selected during publishing
-		const selectedSpeaker = this.stateStore.state.selectedSpeaker || AuraSpeaker.ZEUS;
+		const selectedSpeaker = this.stateStore.state.selectedSpeaker || AuraSpeaker.AUSTRALIAN;
 
 		const params = new URLSearchParams({
 			encoding: AuraEncoding.LINEAR16,
@@ -805,7 +805,7 @@ export class TTSAdapter extends DurableObject<Env> {
 	 */
 	private async generateAudioAura(text: string): Promise<ArrayBuffer> {
 		// Get the speaker that was selected during publishing
-		const selectedSpeaker = this.stateStore.state.selectedSpeaker || AuraSpeaker.ZEUS;
+		const selectedSpeaker = this.stateStore.state.selectedSpeaker || AuraSpeaker.AUSTRALIAN;
 
 		const response = await fetch(`https://api.cloudflare.com/client/v4/accounts/${this.env.CF_ACCOUNT}/ai/run/${TTS_MODEL}`, {
 			headers: {
